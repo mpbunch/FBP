@@ -6,8 +6,8 @@ output: pdf_document
 ---
 
 ```{r, message=FALSE}
-library(caret)
 library(Boruta)
+library(caret)
 library(lime)
 library(stringr)
 ```
@@ -338,8 +338,8 @@ explainer = lime(
 
 explanation = explain(
     x = train_test[[2]][handPicked,],
-   explainer = explainer,
-   n_features = 21
+    explainer = explainer,
+    n_features = 21
 )
 
 plot_features(explanation)
