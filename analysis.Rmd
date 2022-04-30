@@ -292,7 +292,6 @@ write.table(
 
 ```{r}
 # We now begin to format the data to be processed by the ensemble methods
-
 # Select all rownames of the confirmed vals
 confirmed = rownames(vals)
 
@@ -321,13 +320,9 @@ output(boost_model, train_test, 'test')
 ```
 
 
-```{r, fig.width=15, fig.height=10}
-# Find df for all predictions
-# Sort by predicted bottom, mid, top
-
-
+```{r, fig.width=7, fig.height=10}
 # Explainer
-
+# 2, 5, 10, 20
 handPicked = c(556,1488,1073,425)
 train_test[[2]] = subset(train_test[[2]], select=-ForeignBornPct)
 
@@ -340,8 +335,11 @@ explainer = lime(
 explanation = explain(
     x = train_test[[2]][handPicked,],
     explainer = explainer,
-    n_features = 21
+    n_features = 6
 )
 
-plot_features(explanation)
+plot_features(
+    explanation,
+    ncol = 1
+)
 ```
