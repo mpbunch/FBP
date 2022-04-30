@@ -9,6 +9,7 @@ output: pdf_document
 library(caret)
 library(Boruta)
 library(lime)
+library(stringr)
 ```
 
 
@@ -141,13 +142,16 @@ output = function(model, df, partition='test', title=FALSE, output=TRUE){
         # Rendering the plot to the screen
         plot(
             pred.atlas ~ x$ForeignBornPct, 
-            main = ifelse(title, title, paste0('Pred Vs Actual FBP: ', partition,' data ')),
-            xlab = "Actual Foreign Born Pct",
-            ylab = "Predicted Foreign Born Pct"
+            main = ifelse(title, title, paste0('Predicted Vs Actual FBP: ', str_to_title(partition),' Data ')),
+            xlab = "Actual Foreign Born Percent",
+            ylab = "Predicted Foreign Born Percent",
+            col = alpha("#AB0000", 0.4),
+            pch = 20,
+            las = 1
         )
         
         # Adding the abline
-        abline( 0, 1 )
+        abline( 0, 1, col = "black", lwd = 2 )
         
         # Adding the grid
         grid()
@@ -165,7 +169,7 @@ output = function(model, df, partition='test', title=FALSE, output=TRUE){
         }
     }
     # Returning RMSE, R^2, and MAE to the caller
-    return(list(RMSE, R.sq, MAE))
+    return(list(RMSE, R.sq, MAE, pred.atlas))
 }
 ```
 
@@ -304,12 +308,7 @@ df_confirmed = df[, (names(df) %in% confirmed)]
 runItAll()
 ```
 
-```{r}
-
-# pick three cases, and use explainer
-    # high - medium - low
-    # quantiles, predicted fbp vector, get the row number
-
+```{r, fig.width=5, fig.height=5}
 # 21 most important
 data = chunk(df_confirmed, vals, 21)
 train_test = split( data )
@@ -320,17 +319,28 @@ boost_model = boost(train_test, atlas.cvcontrol)
 # Scatter Output
 output(boost_model, train_test, 'test')
 ```
-```{r, fig.width=10, fig.height=5}
+
+
+```{r, fig.width=15, fig.height=10}
+# Find df for all predictions
+# Sort by predicted bottom, mid, top
+
+
 # Explainer
+
+handPicked = c(556,1488,1073,425)
+
 explainer = lime(
-    train_test[[2]][1:4,],
+    train_test[[2]][handPicked,],
     boost_model,
     n_bins = 5
 )
+
 explanation = explain(
-    x = train_test[[2]][1:4,],
+    x = train_test[[2]][handPicked,],
    explainer = explainer,
-   n_features = 5
+   n_features = 21
 )
+
 plot_features(explanation)
 ```
