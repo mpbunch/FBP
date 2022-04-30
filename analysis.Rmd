@@ -1,0 +1,336 @@
+---
+title: "Methods"
+author: "Group Project"
+date: "4/22/2022"
+output: pdf_document
+---
+
+```{r, message=FALSE}
+library(caret)
+library(Boruta)
+library(lime)
+```
+
+
+## Methods
+### Read In Dataset
+```{r}
+# The csv has been created using tools outside of R.
+df = read.csv("~/Dropbox/109GroupProject/Preliminary Variable Determination/Atlas_Reduced_Final.csv")
+# Validate the dimensionality of the data, ensuring it is as expected.
+dim(df)
+```
+
+
+### Data processing
+```{r}
+# Which columns have NA's
+names(which(colSums(is.na(df))>0))
+
+# Display all rows with NA's
+df[rowSums(is.na(df)) > 0,]
+
+# Remove all rows with NA's
+df = na.omit(df)
+
+# Validate the dimensionality of the data, ensuring it is as expected.
+dim(df)
+```
+
+### Functions, Setup
+#### Split data
+```{r}
+# This function is used to split our data into test and train datasets
+split = function(df, ratio=.5){
+    set.seed(1234)
+    ind = sample( 
+        2,
+        nrow(df),
+        replace = T,
+        prob = c(ratio, 1-ratio)
+    )
+    train = df[ ind == 1, ]
+    test  = df[ ind == 2, ]
+    return(list(train, test))
+}
+
+# This function only selects the columns of interest
+chunk = function(df, vals, n=1){
+    rows = rownames(vals[1:n,])
+    rows = append(rows, 'ForeignBornPct')
+    data = df[, (names(df) %in% rows)]
+    return( data )
+}
+```
+
+#### CVControl
+```{r}
+# Globally setting atlas.cvcontrol
+set.seed(1234)
+atlas.cvcontrol =
+    trainControl(
+        method        = "repeatedcv", 
+        number        = 5,
+        repeats       = 2,
+        allowParallel = TRUE
+    )
+```
+
+#### Models
+```{r}
+# This function is a generalization of the train() function
+# It will work for random forest, and bagging
+m = function(train, cvcontrol, method='rf'){
+    set.seed(1234)
+    train = train[[1]]
+    atlas.m = train(
+        ForeignBornPct ~ . ,
+        data       = train,
+        method     = method,
+        trControl  = cvcontrol,
+        importance = TRUE
+    )
+    return(atlas.m)
+}
+
+# This function handles all of the boosting parameters
+boost = function(train, cvcontrol){
+    set.seed(1234)
+    train = train[[1]]
+    atlas.boost = train(
+        ForeignBornPct ~ . ,
+        data      = train,
+        method    = "xgbTree",
+        trControl = cvcontrol,
+        tuneGrid  = expand.grid(
+            nrounds          = 500,
+            max_depth        = 3,
+            eta              = 0.2,
+            gamma            = 2.1,
+            colsample_bytree = 1,
+            min_child_weight = 1,
+            subsample        = 1
+        )
+    )
+    return(atlas.boost)
+}
+```
+
+#### Output 
+```{r}
+# This function is to easily output all data and plots
+output = function(model, df, partition='test', title=FALSE, output=TRUE){
+    # x is either the test or train dataset, where test == 2, and train == 1
+    x = df[[ifelse(partition == 'test', 2, 1)]]
+    
+    # Making the actual prediction
+    pred.atlas = predict(
+        model,
+        newdata = x 
+    )
+    # Calculating RMSE
+    RMSE = sqrt( mean( ( x$ForeignBornPct - pred.atlas )^2 ) )
+    
+    # Calculating R^2
+    R.sq = ( cor( x$ForeignBornPct, pred.atlas )^2 )
+    
+    # Calculating MAE
+    MAE = mean( abs( x$ForeignBornPct - pred.atlas ) )
+    
+    if(output){
+        # Rendering the plot to the screen
+        plot(
+            pred.atlas ~ x$ForeignBornPct, 
+            main = ifelse(title, title, paste0('Pred Vs Actual FBP: ', partition,' data ')),
+            xlab = "Actual Foreign Born Pct",
+            ylab = "Predicted Foreign Born Pct"
+        )
+        
+        # Adding the abline
+        abline( 0, 1 )
+        
+        # Adding the grid
+        grid()
+        
+        # Outputting text
+        {
+            cat(c("Ttle: ", title))
+            writeLines("")
+            cat(c("RMSE: ", round(RMSE, 5)))
+            writeLines("")
+            cat(c("Rsq : ", round(R.sq, 5)))
+            writeLines("")
+            cat(c("MAE : ", round(MAE, 5)))
+            writeLines("")
+        }
+    }
+    # Returning RMSE, R^2, and MAE to the caller
+    return(list(RMSE, R.sq, MAE))
+}
+```
+
+```{r}
+saveDf = function(type, i, data, fileName){
+    # The test and train RMSE, R^2 and MAE is put into a dataframe
+    computed = data.frame(
+        modelType  = type,
+        ncol       = i,
+        test.rmse  = data[[1]],
+        train.rmse = data[[1]],
+        test.r2    = data[[2]],
+        train.r2   = data[[2]],
+        test.mae   = data[[3]],
+        train.mae  = data[[3]]
+    )
+    
+    # The dataframe is written to a file on disc
+    write.table(
+        computed,
+        fileName,
+        row.names = FALSE,
+        append = TRUE,
+        sep = ",",
+        col.names = FALSE
+    )
+}
+```
+
+```{r}
+runItAll = function(){
+    # We want to find the specific set of variables that yeild the highest quality model
+    # To do this, we iterate over all columns increasing by 1 until 2 through n models are created.
+    # We use ncol(df_confirmed)-1, as the previous section added FBP to the end of df_confirmed
+    for(i in 1:ncol(df_confirmed)-1){
+        
+        # We use a supporting function chunk() to only select the columns of interest
+        data = chunk(df_confirmed, vals, i)
+        
+        # We use a supporting function split() to create the train and test data
+        train_test = split( data )
+        
+        # Section 1 | Random Forest
+        # Now we pass the train_test data, cvcontrol, and the model type 'rf' (random forest)
+        # to a supporting function m() to run the model and return the model data
+        model = m(train_test, atlas.cvcontrol, 'rf')
+        
+        # Next we determine the `test` RMSE and R^2, by using a supporting function output()
+        test_rmse_r2_mae = output(model, train_test, 'test', paste0(i, ' columns'), output=F)
+        
+        # Next we determine the `train` RMSE and R^2, by using a supporting function output()
+        train_rmse_r2_mae = output(model, train_test, 'train', paste0(i, ' columns'), output=F)
+        
+        # The dataframe is written to a file for easy future manipulation
+        saveDf('Random Forest', i, train_rmse_r2_mae, "data_partition_output_final_x.csv")
+        
+        # Section 2 | Bagging
+        # This section is for bagging, all concepts are the same as the first section
+        model = m(train_test, atlas.cvcontrol, 'treebag')
+        test_rmse_r2_mae = output(model, train_test, 'test', paste0(i, ' columns'), output=F)
+        train_rmse_r2_mae = output(model, train_test, 'train', paste0(i, ' columns'), output=F)
+        saveDf('Bagging', i, train_rmse_r2_mae, "data_partition_output_final_x.csv")
+        
+        # Section 3 | Boosting
+        # This section is for boosting, all concepts are the same as the first section
+        model = boost(train_test, atlas.cvcontrol)
+        test_rmse_r2_mae = output(model, train_test, 'test', paste0(i, ' columns'), output=F)
+        train_rmse_r2_mae = output(model, train_test, 'tain', paste0(i, ' columns'), output=F)
+        saveDf('Boosting', i, train_rmse_r2_mae, "data_partition_output_final_x.csv")
+    }
+}
+```
+
+### Variable Selection | Boruta
+```{r, message=FALSE}
+# Set a seed so that we get the same result each time.
+set.seed(1234)
+
+# Run Boruta on the entire DF (excluding NA's)
+boruta = Boruta(
+    ForeignBornPct ~ .,
+    data    = df,
+    doTrace = 2,
+    maxRuns = 500
+)
+```
+
+```{r, fig.width=15, fig.height=7}
+# Plot the output of Boruta
+plot(
+    boruta,
+    xlab     = "",
+    las      = 2,
+    cex.axis = 0.6, 
+)
+```
+
+
+```{r}
+# attStats() returns all boruta variable attributes
+vals = attStats(boruta)
+
+# We only care about the confirmed variables
+# Removing tentative, and rejected to reduce total runtime of the project
+vals = vals[vals$decision == 'Confirmed',]
+
+# Order the variables by meanImp descending
+vals = vals[order(vals$meanImp, decreasing=T),]
+
+# Ouptut vals to evaluate
+vals
+
+# Write all confirmed values in decreasing meanImp order to a file
+write.table(
+    vals,
+    "all_boruta_vals.csv",
+    sep = ","
+)
+```
+
+```{r}
+# We now begin to format the data to be processed by the ensemble methods
+
+# Select all rownames of the confirmed vals
+confirmed = rownames(vals)
+
+# Add ForeignBornPct back to the list of variable names
+confirmed = append(confirmed, 'ForeignBornPct')
+
+# Create a new dataframe of only the boruta confirmed variables, with the addition of FBP
+df_confirmed = df[, (names(df) %in% confirmed)]
+```
+
+### Run All Code
+```{r}
+runItAll()
+```
+
+```{r}
+
+# pick three cases, and use explainer
+    # high - medium - low
+    # quantiles, predicted fbp vector, get the row number
+
+# 21 most important
+data = chunk(df_confirmed, vals, 21)
+train_test = split( data )
+
+# XGBoost Model
+boost_model = boost(train_test, atlas.cvcontrol)
+
+# Scatter Output
+output(boost_model, train_test, 'test')
+```
+```{r, fig.width=10, fig.height=5}
+# Explainer
+explainer = lime(
+    train_test[[2]][1:4,],
+    boost_model,
+    n_bins = 5
+)
+explanation = explain(
+    x = train_test[[2]][1:4,],
+   explainer = explainer,
+   n_features = 5
+)
+plot_features(explanation)
+```
