@@ -329,6 +329,7 @@ output(boost_model, train_test, 'test')
 # Explainer
 
 handPicked = c(556,1488,1073,425)
+train_test[[2]] = subset(train_test[[2]], select=-ForeignBornPct)
 
 explainer = lime(
     train_test[[2]][handPicked,],
