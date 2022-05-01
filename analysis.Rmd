@@ -17,7 +17,7 @@ library(stringr)
 ### Read In Dataset
 ```{r}
 # The csv has been created using tools outside of R.
-df = read.csv("~/Dropbox/109GroupProject/Preliminary Variable Determination/Atlas_Reduced_Final.csv")
+df = read.csv("atlas_reduced.csv")
 # Validate the dimensionality of the data, ensuring it is as expected.
 dim(df)
 ```
@@ -257,16 +257,18 @@ boruta = Boruta(
 )
 ```
 
-```{r, fig.width=15, fig.height=7}
+```{r, fig.width=20, fig.height=15}
 # Plot the output of Boruta
+par(mar = c(20, 10, 4, 2) + 0.1)
 plot(
     boruta,
     xlab     = "",
     las      = 2,
-    cex.axis = 0.6, 
+    cex.axis = 0.6,
+    main     = "Boruta Variable Importance"
 )
-```
 
+```
 
 ```{r}
 # attStats() returns all boruta variable attributes
@@ -320,7 +322,7 @@ output(boost_model, train_test, 'test')
 ```
 
 
-```{r, fig.width=7, fig.height=10}
+```{r, fig.width=15, fig.height=10}
 # Explainer
 # 2, 5, 10, 20
 handPicked = c(556,1488,1073,425)
@@ -335,11 +337,15 @@ explainer = lime(
 explanation = explain(
     x = train_test[[2]][handPicked,],
     explainer = explainer,
-    n_features = 6
+    n_features = 21
 )
 
 plot_features(
     explanation,
-    ncol = 1
+    ncol = 2
+)
+
+plot_explanations(
+    explanation
 )
 ```
